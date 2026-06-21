@@ -1,0 +1,56 @@
+{
+  "manifest": {
+    "apis": {
+      "custom": {
+        "endpoint": {
+          "uri": "arn:aws:lambda:us-east-1:TU_ACCOUNT_ID:function:alexa-n8n-skill"
+        },
+        "interfaces": []
+      }
+    },
+    "manifestVersion": "1.0",
+    "permissions": [],
+    "privacyAndCompliance": {
+      "allowsPurchases": false,
+      "locales": {
+        "es-ES": {
+          "privacyPolicyUrl": "",
+          "termsOfUseUrl": ""
+        }
+      },
+      "isExportCompliant": true,
+      "containsAds": false,
+      "isChildDirected": false,
+      "usesPersonalInfo": false
+    },
+    "publishingInformation": {
+      "locales": {
+        "es-ES": {
+          "summary": "Conecta tu Alexa con n8n para automatizaciones bidireccionales",
+          "examplePhrases": [
+            "Alexa, abre mi automatizacion",
+            "Alexa, dile a mi automatizacion que ejecute backup",
+            "Alexa, preguntale a mi automatizacion el resumen del dia"
+          ],
+          "keywords": [
+            "automatizacion",
+            "n8n",
+            "webhook",
+            "IoT",
+            "smart home"
+          ],
+          "name": "Mi Automatizacion n8n",
+          "description": "Skill personalizada para controlar workflows de n8n mediante comandos de voz. Permite ejecutar tareas, consultar estados, enviar mensajes, obtener resumenes y controlar dispositivos, todo a traves de tu Echo y n8n."
+        }
+      },
+      "isAvailableWorldwide": false,
+      "testingInstructions": "Skill de uso personal. Requiere instancia de n8n configurada con los webhooks correspondientes.",
+      "category": "SMART_HOME",
+      "distributionCountries": [
+        "ES",
+        "MX",
+        "US"
+      ]
+    }
+  }
+}

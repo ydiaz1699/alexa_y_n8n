@@ -1,0 +1,91 @@
+{
+  "name": "n8n -> Alexa (Notificaciones Proactivas)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Cada Manana 9AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trigger-alexa-notification",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-manual",
+      "name": "Webhook Manual Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 520],
+      "webhookId": "trigger-alexa-notification"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepara el mensaje para Alexa via Voice Monkey o Notify Me skill\n// Este nodo genera el contenido de la notificacion\n\nconst ahora = new Date();\n\n// === PERSONALIZA TU MENSAJE ===\nconst mensaje = `Buenos dias. Tienes 3 reuniones hoy y 2 tareas urgentes pendientes.`;\n\nreturn [{\n  json: {\n    text: mensaje,\n    title: 'Resumen Matutino',\n    timestamp: ahora.toISOString()\n  }\n}];"
+      },
+      "id": "code-preparar",
+      "name": "Preparar Notificacion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api-v3.voicemonkey.io/trigger",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"token\": \"TU_TOKEN_VOICE_MONKEY\",\n  \"device\": \"TU_DEVICE_ID\",\n  \"text\": \"{{ $json.text }}\"\n}"
+      },
+      "id": "http-voicemonkey",
+      "name": "Enviar a Alexa (Voice Monkey)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 400]
+    }
+  ],
+  "connections": {
+    "Cada Manana 9AM": {
+      "main": [[{ "node": "Preparar Notificacion", "type": "main", "index": 0 }]]
+    },
+    "Webhook Manual Trigger": {
+      "main": [[{ "node": "Preparar Notificacion", "type": "main", "index": 0 }]]
+    },
+    "Preparar Notificacion": {
+      "main": [[{ "node": "Enviar a Alexa (Voice Monkey)", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "n8n-to-alexa-notifications"
+  },
+  "tags": [
+    { "name": "alexa" },
+    { "name": "notificacion" },
+    { "name": "voice-monkey" }
+  ]
+}

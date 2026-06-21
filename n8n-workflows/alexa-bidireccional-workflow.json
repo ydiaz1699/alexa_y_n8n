@@ -1,0 +1,282 @@
+{
+  "name": "Alexa Bidireccional - Hub Central",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "alexa-tarea",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-tarea",
+      "name": "Webhook Ejecutar Tarea",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 80],
+      "webhookId": "alexa-tarea"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "alexa-estado",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-estado",
+      "name": "Webhook Consultar Estado",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alexa-estado"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "alexa-mensaje",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-mensaje",
+      "name": "Webhook Enviar Mensaje",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 520],
+      "webhookId": "alexa-mensaje"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "alexa-resumen",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-resumen",
+      "name": "Webhook Resumen Diario",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 740],
+      "webhookId": "alexa-resumen"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "alexa-dispositivo",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-dispositivo",
+      "name": "Webhook Control Dispositivo",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 960],
+      "webhookId": "alexa-dispositivo"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "alexa-comando",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-comando",
+      "name": "Webhook Comando Libre",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 1180],
+      "webhookId": "alexa-comando"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar la tarea recibida de Alexa\nconst body = $input.first().json.body;\nconst tarea = body.tarea || 'sin nombre';\nconst userId = body.userId || 'desconocido';\n\n// === AQUI VA TU LOGICA ===\n// Ejemplos:\n// - Disparar otro workflow\n// - Llamar a una API externa\n// - Consultar una base de datos\n// - Enviar un email\n\nconsole.log(`Ejecutando tarea: ${tarea} para usuario: ${userId}`);\n\nreturn [{\n  json: {\n    mensaje: `La tarea ${tarea} se ha ejecutado exitosamente desde n8n.`,\n    status: 'completado',\n    tarea: tarea,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "code-tarea",
+      "name": "Procesar Tarea",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 80]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Consultar estado de un elemento\nconst body = $input.first().json.body;\nconst elemento = body.elemento || 'sistema';\n\n// === AQUI VA TU LOGICA ===\n// Ejemplo: consultar API, base de datos, servicio externo\n\nreturn [{\n  json: {\n    mensaje: `El estado de ${elemento} es: funcionando correctamente. Ultima verificacion hace 5 minutos.`,\n    status: 'ok',\n    elemento: elemento,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "code-estado",
+      "name": "Consultar Estado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enviar mensaje a destinatario\nconst body = $input.first().json.body;\nconst destinatario = body.destinatario || 'equipo';\nconst contenido = body.contenido || 'sin contenido';\n\n// === AQUI VA TU LOGICA ===\n// Ejemplo: Enviar por Slack, Telegram, Email, WhatsApp\n// Puedes conectar un nodo de Slack/Telegram despues de este\n\nreturn [{\n  json: {\n    mensaje: `Mensaje enviado a ${destinatario}: ${contenido}`,\n    status: 'enviado',\n    destinatario: destinatario,\n    contenido: contenido,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "code-mensaje",
+      "name": "Enviar Mensaje",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 520]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generar resumen diario\nconst body = $input.first().json.body;\n\n// === AQUI VA TU LOGICA ===\n// Ejemplo:\n// - Consultar calendario (Google Calendar API)\n// - Consultar tareas pendientes (Todoist, Notion)\n// - Consultar emails no leidos\n// - Consultar metricas del negocio\n\nconst ahora = new Date();\nconst resumen = `Resumen del dia ${ahora.toLocaleDateString('es-ES')}: ` +\n  `Tienes 3 reuniones programadas, 5 tareas pendientes, ` +\n  `y 12 emails sin leer. Tu proximo evento es en 2 horas.`;\n\nreturn [{\n  json: {\n    mensaje: resumen,\n    status: 'ok',\n    fecha: ahora.toISOString()\n  }\n}];"
+      },
+      "id": "code-resumen",
+      "name": "Generar Resumen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 740]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Control de dispositivo\nconst body = $input.first().json.body;\nconst dispositivo = body.dispositivo || 'dispositivo';\nconst accion = body.accion || 'activar';\n\n// === AQUI VA TU LOGICA ===\n// Ejemplo:\n// - Llamar API de Home Assistant\n// - Controlar dispositivos MQTT\n// - Enviar comando a Tuya/SmartThings\n\nreturn [{\n  json: {\n    mensaje: `${dispositivo} se ha ${accion === 'encender' ? 'encendido' : accion === 'apagar' ? 'apagado' : accion + ' correctamente'}.`,\n    status: 'ok',\n    dispositivo: dispositivo,\n    accion: accion,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "code-dispositivo",
+      "name": "Control Dispositivo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 960]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar comando libre\nconst body = $input.first().json.body;\nconst comando = body.comando || '';\n\n// === AQUI VA TU LOGICA ===\n// Puedes usar un LLM (OpenAI, etc.) para interpretar el comando\n// y decidir que accion tomar\n\nreturn [{\n  json: {\n    mensaje: `Comando recibido y procesado: ${comando}`,\n    status: 'procesado',\n    comando: comando,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "code-comando",
+      "name": "Procesar Comando",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 1180]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-tarea",
+      "name": "Responder Tarea",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 80]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-estado",
+      "name": "Responder Estado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-mensaje",
+      "name": "Responder Mensaje",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 520]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-resumen",
+      "name": "Responder Resumen",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 740]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-dispositivo",
+      "name": "Responder Dispositivo",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 960]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-comando",
+      "name": "Responder Comando",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 1180]
+    }
+  ],
+  "connections": {
+    "Webhook Ejecutar Tarea": {
+      "main": [[{ "node": "Procesar Tarea", "type": "main", "index": 0 }]]
+    },
+    "Webhook Consultar Estado": {
+      "main": [[{ "node": "Consultar Estado", "type": "main", "index": 0 }]]
+    },
+    "Webhook Enviar Mensaje": {
+      "main": [[{ "node": "Enviar Mensaje", "type": "main", "index": 0 }]]
+    },
+    "Webhook Resumen Diario": {
+      "main": [[{ "node": "Generar Resumen", "type": "main", "index": 0 }]]
+    },
+    "Webhook Control Dispositivo": {
+      "main": [[{ "node": "Control Dispositivo", "type": "main", "index": 0 }]]
+    },
+    "Webhook Comando Libre": {
+      "main": [[{ "node": "Procesar Comando", "type": "main", "index": 0 }]]
+    },
+    "Procesar Tarea": {
+      "main": [[{ "node": "Responder Tarea", "type": "main", "index": 0 }]]
+    },
+    "Consultar Estado": {
+      "main": [[{ "node": "Responder Estado", "type": "main", "index": 0 }]]
+    },
+    "Enviar Mensaje": {
+      "main": [[{ "node": "Responder Mensaje", "type": "main", "index": 0 }]]
+    },
+    "Generar Resumen": {
+      "main": [[{ "node": "Responder Resumen", "type": "main", "index": 0 }]]
+    },
+    "Control Dispositivo": {
+      "main": [[{ "node": "Responder Dispositivo", "type": "main", "index": 0 }]]
+    },
+    "Procesar Comando": {
+      "main": [[{ "node": "Responder Comando", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "alexa-n8n-bidireccional"
+  },
+  "tags": [
+    { "name": "alexa" },
+    { "name": "webhook" },
+    { "name": "automatizacion" }
+  ]
+}

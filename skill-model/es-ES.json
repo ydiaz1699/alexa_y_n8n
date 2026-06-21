@@ -1,0 +1,183 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "mi automatizacion",
+      "intents": [
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        },
+        {
+          "name": "EjecutarTareaIntent",
+          "slots": [
+            {
+              "name": "nombreTarea",
+              "type": "AMAZON.SearchQuery",
+              "samples": [
+                "la tarea {nombreTarea}",
+                "{nombreTarea}"
+              ]
+            }
+          ],
+          "samples": [
+            "ejecuta {nombreTarea}",
+            "ejecuta la tarea {nombreTarea}",
+            "ejecutar {nombreTarea}",
+            "corre {nombreTarea}",
+            "lanza {nombreTarea}",
+            "inicia {nombreTarea}",
+            "activa {nombreTarea}",
+            "arranca {nombreTarea}",
+            "pon en marcha {nombreTarea}",
+            "haz {nombreTarea}"
+          ]
+        },
+        {
+          "name": "ConsultarEstadoIntent",
+          "slots": [
+            {
+              "name": "elemento",
+              "type": "AMAZON.SearchQuery",
+              "samples": [
+                "de {elemento}",
+                "del {elemento}",
+                "{elemento}"
+              ]
+            }
+          ],
+          "samples": [
+            "cual es el estado de {elemento}",
+            "como esta {elemento}",
+            "dime el estado de {elemento}",
+            "consulta {elemento}",
+            "verifica {elemento}",
+            "revisa {elemento}",
+            "como va {elemento}",
+            "que tal {elemento}",
+            "estado de {elemento}"
+          ]
+        },
+        {
+          "name": "EnviarMensajeIntent",
+          "slots": [
+            {
+              "name": "destinatario",
+              "type": "AMAZON.FirstName",
+              "samples": [
+                "a {destinatario}",
+                "{destinatario}"
+              ]
+            },
+            {
+              "name": "contenido",
+              "type": "AMAZON.SearchQuery",
+              "samples": [
+                "diciendo {contenido}",
+                "que diga {contenido}",
+                "{contenido}"
+              ]
+            }
+          ],
+          "samples": [
+            "envia un mensaje a {destinatario} diciendo {contenido}",
+            "manda un mensaje a {destinatario} que diga {contenido}",
+            "dile a {destinatario} que {contenido}",
+            "envia a {destinatario} {contenido}",
+            "notifica a {destinatario} que {contenido}",
+            "avisa a {destinatario} que {contenido}",
+            "escribe a {destinatario} diciendo {contenido}",
+            "comunica a {destinatario} que {contenido}"
+          ]
+        },
+        {
+          "name": "ResumenDiarioIntent",
+          "slots": [],
+          "samples": [
+            "dame el resumen del dia",
+            "resumen diario",
+            "como va el dia",
+            "que hay de nuevo",
+            "novedades del dia",
+            "que paso hoy",
+            "actualizame",
+            "dame un resumen",
+            "que tengo pendiente",
+            "hay novedades"
+          ]
+        },
+        {
+          "name": "ControlDispositivoIntent",
+          "slots": [
+            {
+              "name": "accionDispositivo",
+              "type": "ACCION_DISPOSITIVO",
+              "samples": [
+                "{accionDispositivo}"
+              ]
+            },
+            {
+              "name": "dispositivo",
+              "type": "AMAZON.SearchQuery",
+              "samples": [
+                "el {dispositivo}",
+                "la {dispositivo}",
+                "{dispositivo}"
+              ]
+            }
+          ],
+          "samples": [
+            "{accionDispositivo} {dispositivo}",
+            "{accionDispositivo} el {dispositivo}",
+            "{accionDispositivo} la {dispositivo}",
+            "pon {dispositivo} en {accionDispositivo}",
+            "cambia {dispositivo} a {accionDispositivo}"
+          ]
+        },
+        {
+          "name": "ComandoLibreIntent",
+          "slots": [
+            {
+              "name": "comando",
+              "type": "AMAZON.SearchQuery",
+              "samples": [
+                "{comando}"
+              ]
+            }
+          ],
+          "samples": [
+            "dile a n8n {comando}",
+            "ejecuta el comando {comando}",
+            "comando {comando}",
+            "procesa {comando}",
+            "haz lo siguiente {comando}",
+            "necesito que {comando}",
+            "automatiza {comando}"
+          ]
+        }
+      ],
+      "types": [
+        {
+          "name": "ACCION_DISPOSITIVO",
+          "values": [
+            { "name": { "value": "encender", "synonyms": ["enciende", "prende", "activa", "conecta"] } },
+            { "name": { "value": "apagar", "synonyms": ["apaga", "desactiva", "desconecta"] } },
+            { "name": { "value": "reiniciar", "synonyms": ["reinicia", "resetea", "restablece"] } },
+            { "name": { "value": "pausar", "synonyms": ["pausa", "detener", "deten"] } }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,24 @@
+# Dependencias
+node_modules/
+lambda/node_modules/
+
+# Variables de entorno
+.env
+lambda/.env
+
+# Archivos de deploy
+*.zip
+lambda-deployment.zip
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
