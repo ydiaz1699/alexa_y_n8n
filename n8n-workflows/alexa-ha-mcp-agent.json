@@ -1,0 +1,121 @@
+{
+  "name": "Alexa → n8n AI Agent → Home Assistant (via ha-mcp)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "alexa-comando",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-comando-mcp",
+      "name": "Webhook Comando Alexa",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alexa-comando"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "Eres un asistente de hogar inteligente. Recibes comandos de voz de Alexa y los ejecutas en Home Assistant usando las herramientas MCP disponibles.\n\nReglas:\n1. Responde SIEMPRE en español\n2. Responde de forma breve y natural (Alexa leera tu respuesta en voz alta)\n3. Maximo 2 frases en la respuesta\n4. Si controlas un dispositivo, confirma la accion\n5. Si consultas un estado, reporta de forma concisa\n6. Si no puedes hacer algo, dilo claramente\n\nEjemplos de buenas respuestas:\n- \"Luces del salon encendidas.\"\n- \"La temperatura interior es de 23 grados y la humedad esta al 55 por ciento.\"\n- \"Escena modo pelicula activada. Disfruta.\"\n- \"No encontre un dispositivo con ese nombre.\"",
+          "maxIterations": 5
+        }
+      },
+      "id": "ai-agent",
+      "name": "AI Agent (Home Assistant)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "id": "openai-chat",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [400, 520]
+    },
+    {
+      "parameters": {
+        "sseEndpoint": "http://TU_IP_HOMELAB:8123/mcp/sse"
+      },
+      "id": "mcp-ha-tool",
+      "name": "Home Assistant MCP Tools",
+      "type": "@n8n/n8n-nodes-langchain.toolMcp",
+      "typeVersion": 1,
+      "position": [560, 520]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extraer el comando del body de Alexa y preparar para el agente\nconst body = $input.first().json.body;\nconst comando = body.comando || body.tarea || body.contenido || '';\nconst accion = body.action || 'comando_libre';\nconst dispositivo = body.dispositivo || '';\nconst accionDisp = body.accion || '';\n\n// Construir prompt natural para el agente\nlet prompt = '';\n\nswitch(accion) {\n  case 'control_dispositivo':\n    prompt = `${accionDisp} ${dispositivo}`;\n    break;\n  case 'consultar_estado':\n    const elemento = body.elemento || 'casa';\n    prompt = `Cual es el estado de ${elemento}?`;\n    break;\n  case 'ejecutar_tarea':\n    const tarea = body.tarea || '';\n    prompt = `Ejecuta la tarea: ${tarea}`;\n    break;\n  case 'resumen_diario':\n    prompt = 'Dame un resumen del estado actual de la casa: temperatura, luces encendidas, puertas, etc.';\n    break;\n  default:\n    prompt = comando || `${accionDisp} ${dispositivo}`.trim();\n}\n\nreturn [{ json: { prompt } }];"
+      },
+      "id": "code-prepare-prompt",
+      "name": "Preparar Prompt para Agente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [360, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatear la respuesta del agente para Alexa\nconst agentResponse = $input.first().json.output || $input.first().json.text || 'Comando ejecutado.';\n\n// Limpiar respuesta para que suene bien en Alexa\nlet mensaje = agentResponse\n  .replace(/\\*\\*/g, '')  // Quitar markdown bold\n  .replace(/\\*/g, '')    // Quitar markdown italic\n  .replace(/#+\\s/g, '')  // Quitar headers markdown\n  .replace(/`[^`]*`/g, (match) => match.replace(/`/g, ''))  // Quitar backticks\n  .replace(/\\n/g, '. ') // Saltos de linea a puntos\n  .replace(/\\s+/g, ' ') // Multiples espacios\n  .trim();\n\n// Limitar longitud para Alexa (max ~200 palabras para buena UX)\nconst words = mensaje.split(' ');\nif (words.length > 80) {\n  mensaje = words.slice(0, 80).join(' ') + '. Y mas.';\n}\n\nreturn [{\n  json: {\n    mensaje: mensaje,\n    status: 'ok',\n    source: 'n8n-ai-agent-via-ha-mcp',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "code-format-response",
+      "name": "Formatear Respuesta para Alexa",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [620, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-alexa",
+      "name": "Responder a Alexa",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [820, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Comando Alexa": {
+      "main": [[{ "node": "Preparar Prompt para Agente", "type": "main", "index": 0 }]]
+    },
+    "Preparar Prompt para Agente": {
+      "main": [[{ "node": "AI Agent (Home Assistant)", "type": "main", "index": 0 }]]
+    },
+    "AI Agent (Home Assistant)": {
+      "main": [[{ "node": "Formatear Respuesta para Alexa", "type": "main", "index": 0 }]]
+    },
+    "Formatear Respuesta para Alexa": {
+      "main": [[{ "node": "Responder a Alexa", "type": "main", "index": 0 }]]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [[{ "node": "AI Agent (Home Assistant)", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Home Assistant MCP Tools": {
+      "ai_tool": [[{ "node": "AI Agent (Home Assistant)", "type": "ai_tool", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "alexa-ha-mcp-agent"
+  },
+  "tags": [
+    { "name": "alexa" },
+    { "name": "ha-mcp" },
+    { "name": "ai-agent" },
+    { "name": "home-assistant" }
+  ]
+}
