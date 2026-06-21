@@ -1,0 +1,55 @@
+{
+  "name": "n8n -> Node-RED Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "alexa-dispositivo",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-dispositivo-v2",
+      "name": "Webhook Control Dispositivo (via Node-RED)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alexa-dispositivo"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://TU_IP_NODERED:1880/alexa/command",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}"
+      },
+      "id": "call-nodered",
+      "name": "Llamar Node-RED",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "respond-device",
+      "name": "Responder a Alexa",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Control Dispositivo (via Node-RED)": {
+      "main": [[{ "node": "Llamar Node-RED", "type": "main", "index": 0 }]]
+    },
+    "Llamar Node-RED": {
+      "main": [[{ "node": "Responder a Alexa", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "node-red" }, { "name": "alexa" }, { "name": "home-assistant" }]
+}

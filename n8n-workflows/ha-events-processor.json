@@ -1,0 +1,99 @@
+{
+  "name": "Home Assistant Events Processor",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ha-event",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-ha-event",
+      "name": "Webhook HA Events",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "ha-event"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            { "outputKey": "security_alert", "conditions": { "conditions": [{ "leftValue": "={{ $json.body.event }}", "rightValue": "security_alert", "operator": { "type": "string", "operation": "equals" } }] } },
+            { "outputKey": "temperature_alert", "conditions": { "conditions": [{ "leftValue": "={{ $json.body.event }}", "rightValue": "temperature_alert", "operator": { "type": "string", "operation": "equals" } }] } },
+            { "outputKey": "arrival", "conditions": { "conditions": [{ "leftValue": "={{ $json.body.event }}", "rightValue": "arrival_home", "operator": { "type": "string", "operation": "equals" } }] } },
+            { "outputKey": "departure", "conditions": { "conditions": [{ "leftValue": "={{ $json.body.event }}", "rightValue": "departure_home", "operator": { "type": "string", "operation": "equals" } }] } }
+          ]
+        }
+      },
+      "id": "switch-event",
+      "name": "Router por Evento",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api-v3.voicemonkey.io/trigger",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"token\": \"TU_TOKEN\",\n  \"device\": \"TU_DEVICE\",\n  \"text\": \"Alerta de seguridad. {{ $json.body.message }}\"\n}"
+      },
+      "id": "alert-alexa",
+      "name": "Alerta Alexa (Voice Monkey)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api-v3.voicemonkey.io/trigger",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"token\": \"TU_TOKEN\",\n  \"device\": \"TU_DEVICE\",\n  \"text\": \"Atencion. La temperatura interior es de {{ $json.body.temperature }} grados. Se ha encendido el aire acondicionado.\"\n}"
+      },
+      "id": "temp-alexa",
+      "name": "Alerta Temperatura Alexa",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log de llegada - puedes agregar logica adicional\nconst body = $input.first().json.body;\nreturn [{ json: { status: 'ok', message: `${body.person} llego a casa` } }];"
+      },
+      "id": "log-arrival",
+      "name": "Log Llegada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log de salida + posibles acciones\nconst body = $input.first().json.body;\nreturn [{ json: { status: 'ok', message: `${body.person} salio de casa` } }];"
+      },
+      "id": "log-departure",
+      "name": "Log Salida",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 540]
+    }
+  ],
+  "connections": {
+    "Webhook HA Events": {
+      "main": [[{ "node": "Router por Evento", "type": "main", "index": 0 }]]
+    },
+    "Router por Evento": {
+      "main": [
+        [{ "node": "Alerta Alexa (Voice Monkey)", "type": "main", "index": 0 }],
+        [{ "node": "Alerta Temperatura Alexa", "type": "main", "index": 0 }],
+        [{ "node": "Log Llegada", "type": "main", "index": 0 }],
+        [{ "node": "Log Salida", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "home-assistant" }, { "name": "alexa" }, { "name": "events" }]
+}

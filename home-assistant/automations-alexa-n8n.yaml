@@ -1,0 +1,142 @@
+# ============================================================
+# Automaciones de Home Assistant para integracion con Alexa + n8n
+# Agregar al archivo automations.yaml de tu Home Assistant
+# ============================================================
+
+# --- EVENTO: Notificar a n8n cuando alguien llega a casa ---
+- id: "notify_n8n_arrival"
+  alias: "Notificar n8n - Llegada a casa"
+  description: "Envia un webhook a n8n cuando alguien llega a casa"
+  trigger:
+    - platform: state
+      entity_id: person.tu_nombre
+      to: "home"
+  condition: []
+  action:
+    - service: rest_command.notify_n8n
+      data:
+        event: "arrival_home"
+        person: "{{ trigger.to_state.attributes.friendly_name }}"
+        timestamp: "{{ now().isoformat() }}"
+  mode: single
+
+# --- EVENTO: Notificar a n8n cuando alguien sale de casa ---
+- id: "notify_n8n_departure"
+  alias: "Notificar n8n - Salida de casa"
+  description: "Envia un webhook a n8n cuando alguien sale de casa"
+  trigger:
+    - platform: state
+      entity_id: person.tu_nombre
+      from: "home"
+  condition: []
+  action:
+    - service: rest_command.notify_n8n
+      data:
+        event: "departure_home"
+        person: "{{ trigger.to_state.attributes.friendly_name }}"
+        timestamp: "{{ now().isoformat() }}"
+  mode: single
+
+# --- EVENTO: Alerta de seguridad (movimiento + nadie en casa) ---
+- id: "security_alert_n8n"
+  alias: "Alerta Seguridad via n8n"
+  description: "Detecta movimiento cuando no hay nadie y avisa via n8n -> Alexa"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.movimiento_entrada
+      to: "on"
+  condition:
+    - condition: state
+      entity_id: group.familia
+      state: "not_home"
+  action:
+    - service: rest_command.notify_n8n
+      data:
+        event: "security_alert"
+        sensor: "{{ trigger.entity_id }}"
+        message: "Movimiento detectado en la entrada y no hay nadie en casa"
+        timestamp: "{{ now().isoformat() }}"
+    # Tambien notifica directamente por Alexa si hay alguien
+    - service: notify.alexa_media
+      data:
+        target: media_player.echo_salon
+        message: "Alerta de seguridad. Se detecto movimiento en la entrada."
+        data:
+          type: announce
+  mode: single
+
+# --- EVENTO: Temperatura demasiado alta ---
+- id: "temp_alert_n8n"
+  alias: "Alerta Temperatura via n8n"
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.temperatura_interior
+      above: 30
+  condition: []
+  action:
+    - service: rest_command.notify_n8n
+      data:
+        event: "temperature_alert"
+        temperature: "{{ states('sensor.temperatura_interior') }}"
+        message: "La temperatura interior supero los 30 grados"
+        timestamp: "{{ now().isoformat() }}"
+    - service: climate.set_temperature
+      target:
+        entity_id: climate.aire_salon
+      data:
+        temperature: 24
+  mode: single
+
+# --- RECIBIR COMANDOS: Webhook desde n8n para ejecutar acciones en HA ---
+- id: "n8n_webhook_receiver"
+  alias: "Recibir Comandos de n8n"
+  description: "Recibe webhooks de n8n para ejecutar acciones en HA"
+  trigger:
+    - platform: webhook
+      webhook_id: "n8n_command_receiver"
+      allowed_methods:
+        - POST
+      local_only: false
+  condition: []
+  action:
+    - choose:
+        # Encender/apagar dispositivo
+        - conditions:
+            - condition: template
+              value_template: "{{ trigger.json.action == 'toggle_device' }}"
+          sequence:
+            - service: "homeassistant.{{ trigger.json.service }}"
+              target:
+                entity_id: "{{ trigger.json.entity_id }}"
+
+        # Activar escena
+        - conditions:
+            - condition: template
+              value_template: "{{ trigger.json.action == 'activate_scene' }}"
+          sequence:
+            - service: scene.turn_on
+              target:
+                entity_id: "{{ trigger.json.scene_id }}"
+
+        # Anuncio por Alexa
+        - conditions:
+            - condition: template
+              value_template: "{{ trigger.json.action == 'announce' }}"
+          sequence:
+            - service: notify.alexa_media
+              data:
+                target: "{{ trigger.json.target | default('media_player.echo_salon') }}"
+                message: "{{ trigger.json.message }}"
+                data:
+                  type: announce
+
+        # Ejecutar script
+        - conditions:
+            - condition: template
+              value_template: "{{ trigger.json.action == 'run_script' }}"
+          sequence:
+            - service: script.turn_on
+              target:
+                entity_id: "{{ trigger.json.script_id }}"
+  mode: queued
+  max: 10
