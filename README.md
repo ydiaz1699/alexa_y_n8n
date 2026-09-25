@@ -1,30 +1,28 @@
-# Alexa + n8n - Conexion Bidireccional
+# Alexa + n8n + Node-RED + Home Assistant - Conexion Bidireccional
 
-Proyecto completo para conectar **Amazon Echo (Alexa)** con **n8n** de forma bidireccional usando una **Custom Skill** y **AWS Lambda**.
+Proyecto completo para conectar **Amazon Echo (Alexa)** con **n8n**, **Node-RED** y **Home Assistant** de forma bidireccional usando una **Custom Skill** y **AWS Lambda**.
 
 ## Arquitectura
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    FLUJO BIDIRECCIONAL                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ALEXA → n8n (Comandos de voz)                                 │
-│  ┌───────┐    ┌─────────┐    ┌──────────┐    ┌──────────────┐ │
-│  │ Echo  │───>│ Alexa   │───>│  Lambda  │───>│ n8n Webhook  │ │
-│  │Device │    │ Service │    │(Node.js) │    │  (responde)  │ │
-│  └───────┘    └─────────┘    └──────────┘    └──────────────┘ │
-│      ▲                            │                   │        │
-│      │                            ▼                   ▼        │
-│      └─────── Alexa habla ◄── respuesta ◄── JSON response     │
-│                                                                 │
-│  n8n → ALEXA (Notificaciones proactivas)                       │
-│  ┌──────────────┐    ┌──────────────┐    ┌───────┐            │
-│  │ n8n Workflow │───>│ Voice Monkey │───>│ Echo  │            │
-│  │  (HTTP Req)  │    │     API      │    │Device │            │
-│  └──────────────┘    └──────────────┘    └───────┘            │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                    HOMELAB - FLUJO COMPLETO                           │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ALEXA → n8n → Node-RED → Home Assistant (Comandos de voz)          │
+│  ┌──────┐   ┌───────┐   ┌────────┐   ┌─────────┐   ┌───────────┐  │
+│  │ Echo │──>│ Lambda│──>│  n8n   │──>│Node-RED │──>│Home Assist│  │
+│  └──────┘   └───────┘   └────────┘   └─────────┘   └───────────┘  │
+│      ▲                       │                           │           │
+│      └───── Alexa habla ◄────┘     ◄── estado/confirm ──┘           │
+│                                                                      │
+│  Home Assistant → Node-RED → n8n → Alexa (Alertas proactivas)       │
+│  ┌───────────┐   ┌─────────┐   ┌────────┐   ┌──────────┐   ┌────┐│
+│  │ Sensores  │──>│Node-RED │──>│  n8n   │──>│VoiceMonk │──>│Echo││
+│  │ HA events │   │(bridge) │   │(process│   │   API    │   │    ││
+│  └───────────┘   └─────────┘   └────────┘   └──────────┘   └────┘│
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Estructura del Proyecto
@@ -41,7 +39,17 @@ alexa_y_n8n/
 │   └── skill.json                # Manifest de la skill
 ├── n8n-workflows/                 # Workflows exportados de n8n
 │   ├── alexa-bidireccional-workflow.json  # Hub central (Alexa -> n8n)
-│   └── n8n-a-alexa-notificacion.json     # Notificaciones (n8n -> Alexa)
+│   ├── alexa-ha-mcp-agent.json           # AI Agent + ha-mcp (RECOMENDADO)
+│   ├── n8n-a-alexa-notificacion.json     # Notificaciones (n8n -> Alexa)
+│   ├── ha-events-processor.json          # Procesa eventos de Home Assistant
+│   └── node-red-orchestrator.json        # Enruta comandos via Node-RED a HA
+├── node-red/                      # Flows de Node-RED
+│   ├── flows-alexa-n8n-ha.json   # Flow principal (bridge n8n <-> HA)
+│   └── README-node-red.md        # Guia de setup de Node-RED
+├── home-assistant/                # Config de Home Assistant
+│   ├── automations-alexa-n8n.yaml # Automaciones HA para n8n
+│   ├── configuration-extras.yaml  # rest_commands, scripts, templates
+│   └── README-ha-mcp.md          # Guia setup ha-mcp + n8n AI Agent
 ├── docs/                          # Documentacion adicional
 │   └── diagramas.md              # Diagramas de flujo detallados
 ├── .gitignore
@@ -55,28 +63,50 @@ alexa_y_n8n/
 3. **Instancia de n8n accesible desde internet** - Opciones:
    - [n8n Cloud](https://n8n.io/cloud/) (mas facil)
    - Self-hosted con dominio + SSL (Cloudflare Tunnel, ngrok, VPS)
-4. **Cuenta de Voice Monkey** (solo para n8n -> Alexa) - [voicemonkey.io](https://voicemonkey.io)
-5. **Node.js 18+** instalado localmente (para desarrollo)
+4. **ha-mcp** corriendo en tu homelab - [github.com/homeassistant-ai/ha-mcp](https://github.com/homeassistant-ai/ha-mcp)
+5. **Cuenta de Voice Monkey** (solo para n8n -> Alexa) - [voicemonkey.io](https://voicemonkey.io)
+6. **Un LLM** para el AI Agent: OpenAI API key, o Ollama local (gratis)
+7. **Node.js 18+** instalado localmente (para desarrollo)
 
 ---
 
 ## Guia de Configuracion Paso a Paso
 
-### Paso 1: Configurar n8n
+### Paso 1: Configurar ha-mcp (Home Assistant MCP Server)
+
+> **Esta es la pieza clave** que permite a n8n controlar HA con lenguaje natural.
+> Consulta la guia detallada en `home-assistant/README-ha-mcp.md`
+
+**Opcion rapida con Docker:**
+```bash
+docker run -d \
+  --name ha-mcp \
+  --restart unless-stopped \
+  -e HOMEASSISTANT_URL=http://TU_IP_HA:8123 \
+  -e HOMEASSISTANT_TOKEN=TU_LONG_LIVED_TOKEN \
+  -e TRANSPORT=sse \
+  -e PORT=3000 \
+  -p 3000:3000 \
+  ghcr.io/homeassistant-ai/ha-mcp:latest
+```
+
+Verifica que funciona: `curl http://TU_IP:3000/sse` (deberia mantener conexion abierta)
+
+### Paso 2: Configurar n8n
 
 1. Accede a tu instancia de n8n
-2. Ve a **Workflows** > **Importar desde archivo**
-3. Importa `n8n-workflows/alexa-bidireccional-workflow.json`
-4. **Activa el workflow** (importante: los webhooks solo funcionan con el workflow activo)
-5. Anota la URL base de tus webhooks. Sera algo como:
-   ```
-   https://tu-n8n.com/webhook/alexa-tarea
-   https://tu-n8n.com/webhook/alexa-estado
-   https://tu-n8n.com/webhook/alexa-mensaje
-   https://tu-n8n.com/webhook/alexa-resumen
-   https://tu-n8n.com/webhook/alexa-dispositivo
-   https://tu-n8n.com/webhook/alexa-comando
-   ```
+2. **Importa el workflow principal (AI Agent + ha-mcp)**:
+   - Importa `n8n-workflows/alexa-ha-mcp-agent.json` ⭐ **RECOMENDADO**
+   - Configura el nodo "Home Assistant MCP Tools":
+     - SSE Endpoint: `http://TU_IP_HOMELAB:3000/sse`
+     - Authentication: Bearer → tu Long-Lived Token de HA
+   - Configura el Chat Model (OpenAI o Ollama)
+   - Activa el workflow
+3. **Opcionalmente**, importa los workflows adicionales:
+   - `alexa-bidireccional-workflow.json` - Hub clasico con webhooks (sin AI)
+   - `n8n-a-alexa-notificacion.json` - Notificaciones n8n → Echo
+   - `ha-events-processor.json` - Alertas de HA
+4. Anota la URL de produccion del webhook principal
 
 ### Paso 2: Crear la Skill en Alexa Developer Console
 
@@ -161,7 +191,45 @@ aws lambda add-permission \
    - Reemplaza `TU_TOKEN_VOICE_MONKEY` y `TU_DEVICE_ID`
    - Activa el workflow
 
-### Paso 5: Probar
+### Paso 5: Configurar Node-RED (bridge con Home Assistant)
+
+1. Instala el nodo de HA en Node-RED:
+   ```bash
+   cd ~/.node-red
+   npm install node-red-contrib-home-assistant-websocket
+   ```
+2. Reinicia Node-RED
+3. Importa `node-red/flows-alexa-n8n-ha.json` en Node-RED
+4. Configura el servidor de Home Assistant:
+   - Base URL: `http://TU_IP_HA:8123`
+   - Long-Lived Access Token (generar en HA > Perfil > Tokens)
+5. Configura las variables de entorno de Node-RED:
+   - `VOICE_MONKEY_TOKEN`
+   - `VOICE_MONKEY_DEVICE`
+6. Edita los mapas de dispositivos en los nodos Function para que coincidan con tus entity_ids reales
+7. Deploy
+
+### Paso 6: Configurar Home Assistant
+
+1. Agrega el contenido de `home-assistant/configuration-extras.yaml` a tu `configuration.yaml`:
+   - `rest_command` para llamar a n8n y Node-RED
+   - `script` con rutinas utiles (buenos_dias, buenas_noches, etc.)
+   - `template` sensor con resumen del hogar
+2. Agrega las automaciones de `home-assistant/automations-alexa-n8n.yaml` a tu archivo de automaciones
+3. Cambia las URLs de ejemplo por las tuyas:
+   - `https://tu-n8n.ejemplo.com/webhook/ha-event` → tu URL real de n8n
+   - `http://localhost:1880/alexa/command` → tu IP de Node-RED
+4. Cambia los `entity_id` por los de tu instalacion real
+5. Reinicia Home Assistant
+
+### Paso 7: Importar workflow de eventos en n8n
+
+1. Importa `n8n-workflows/ha-events-processor.json` - Procesa alertas de HA
+2. Importa `n8n-workflows/node-red-orchestrator.json` - Enruta a Node-RED
+3. En el orchestrator, cambia `TU_IP_NODERED:1880` por la IP real de tu Node-RED
+4. Activa ambos workflows
+
+### Paso 8: Probar
 
 #### Probar Alexa -> n8n:
 1. En la Alexa Developer Console, ve al **Test** tab
@@ -173,6 +241,17 @@ aws lambda add-permission \
    - "dame el resumen del dia"
    - "enciende las luces"
    - "envia un mensaje a Carlos diciendo todo listo"
+
+#### Probar Alexa -> n8n -> Node-RED -> HA:
+1. Di: "Alexa, dile a mi automatizacion que encienda las luces"
+2. n8n deberia enrutar a Node-RED, que ejecuta la accion en HA
+3. Verifica en HA que la entidad cambio de estado
+
+#### Probar HA -> n8n -> Alexa:
+1. Activa manualmente un sensor en HA (o simula un evento)
+2. La automatizacion de HA enviara el evento a n8n
+3. n8n procesara y enviara la alerta via Voice Monkey
+4. Tu Echo deberia anunciar la alerta
 
 #### Probar n8n -> Alexa:
 1. En n8n, ejecuta manualmente el workflow de notificacion
@@ -245,3 +324,51 @@ Code (formatear mensaje) -> Respond to Webhook
 ## Licencia
 
 MIT License - Usa este proyecto como quieras.
+
+---
+
+## Casos de Uso con Homelab Completo
+
+### Ejemplo 1: "Alexa, modo pelicula"
+```
+Echo → Lambda → n8n → Node-RED → Home Assistant
+                                    ├─ Apaga luces principales
+                                    ├─ Enciende tira LED en modo tenue
+                                    ├─ Enciende TV
+                                    └─ Baja persianas
+```
+
+### Ejemplo 2: Alerta de seguridad automatica
+```
+Sensor movimiento (HA) → Automation → rest_command → n8n
+  n8n evalua: nadie en casa?
+    SI → Voice Monkey → Echo: "Alerta: movimiento detectado"
+    SI → Telegram/Email notificacion
+    SI → Captura camara → guarda snapshot
+```
+
+### Ejemplo 3: "Alexa, dame el resumen del dia"
+```
+Echo → Lambda → n8n:
+  ├─ Consulta Google Calendar (reuniones)
+  ├─ Consulta HA (temperatura, luces encendidas)
+  ├─ Consulta Todoist (tareas pendientes)
+  └─ Formatea respuesta → Lambda → Echo habla el resumen
+```
+
+### Ejemplo 4: Rutina de "Buenos dias" completa
+```
+Echo: "Alexa, buenos dias" → Lambda → n8n → Node-RED → HA:
+  ├─ Activa scene.modo_dia
+  ├─ Lee temperatura actual
+  ├─ Consulta calendario
+  └─ Echo anuncia: "Buenos dias, 22 grados, tienes 3 reuniones hoy"
+```
+
+### Ejemplo 5: n8n detecta email urgente → avisa por Echo
+```
+n8n (trigger: nuevo email con label "urgente")
+  → Procesa contenido
+  → Voice Monkey API
+  → Echo: "Tienes un email urgente de Juan sobre el proyecto X"
+```

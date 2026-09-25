@@ -1,4 +1,4 @@
-# Diagramas de Flujo - Alexa + n8n Bidireccional
+# Diagramas de Flujo - Alexa + n8n + Node-RED + Home Assistant
 
 ## Flujo 1: Alexa -> n8n (Comando de Voz)
 
@@ -130,3 +130,133 @@ Trigger: Schedule (9AM) o Evento externo
   - Header Auth (agregar token en headers)
   - Basic Auth
   - IP Whitelist (IPs de AWS Lambda)
+
+
+
+## Flujo 3: Alexa → n8n → Node-RED → Home Assistant
+
+```
+Usuario: "Alexa, dile a mi automatizacion que encienda las luces"
+                          │
+                          ▼
+              ┌─────────────────────┐
+              │   Alexa → Lambda    │
+              │  (extrae intent)    │
+              └──────────┬──────────┘
+                         │ POST /webhook/alexa-dispositivo
+                         ▼
+              ┌─────────────────────┐
+              │        n8n          │
+              │  (recibe comando)   │
+              └──────────┬──────────┘
+                         │ POST /alexa/command
+                         ▼
+              ┌─────────────────────┐
+              │     Node-RED        │
+              │                     │
+              │ 1. Parsea comando   │
+              │ 2. Mapea entity_id  │
+              │ 3. Llama a HA API   │
+              └──────────┬──────────┘
+                         │ WebSocket / REST API
+                         ▼
+              ┌─────────────────────┐
+              │  Home Assistant      │
+              │                     │
+              │ light.turn_on       │
+              │ entity: light.salon │
+              └──────────┬──────────┘
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │   Luces fisicas     │
+              │   SE ENCIENDEN      │
+              └─────────────────────┘
+```
+
+## Flujo 4: Home Assistant → Node-RED → n8n → Alexa (Alertas)
+
+```
+Evento: Sensor de movimiento detecta presencia (nadie en casa)
+                          │
+                          ▼
+              ┌─────────────────────┐
+              │  Home Assistant      │
+              │  (state_changed)    │
+              └──────────┬──────────┘
+                         │ Automation trigger
+                         ▼
+              ┌─────────────────────┐
+              │     Node-RED        │
+              │ (escucha eventos)   │
+              └──────────┬──────────┘
+                         │ POST /webhook/ha-event
+                         ▼
+              ┌─────────────────────┐
+              │        n8n          │
+              │                     │
+              │ 1. Recibe evento    │
+              │ 2. Clasifica        │
+              │ 3. Decide accion    │
+              └──────────┬──────────┘
+                         │ POST api-v3.voicemonkey.io
+                         ▼
+              ┌─────────────────────┐
+              │   Voice Monkey      │
+              └──────────┬──────────┘
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │      Echo           │
+              │ "Alerta: movimiento │
+              │  en la entrada"     │
+              └─────────────────────┘
+```
+
+## Arquitectura Completa del Homelab
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                         TU HOMELAB                                      │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  ┌──────────┐     ┌──────────────┐     ┌─────────────────────┐       │
+│  │ Echo(s)  │◄───►│   Alexa      │◄───►│  AWS Lambda         │       │
+│  │ Devices  │     │   Cloud      │     │  (Custom Skill)     │       │
+│  └──────────┘     └──────────────┘     └──────────┬──────────┘       │
+│       ▲                                           │                   │
+│       │ Voice Monkey                              │ webhooks          │
+│       │                                           ▼                   │
+│  ┌────┴────────────────────────────────────────────────────┐          │
+│  │                      n8n                                 │          │
+│  │  - Hub de webhooks (recibe de Lambda)                   │          │
+│  │  - Procesador de eventos (recibe de HA/Node-RED)        │          │
+│  │  - Orquestador (decide que hacer con cada comando)      │          │
+│  │  - Notificador (envia a Voice Monkey -> Echo)           │          │
+│  └──────────────────────────┬──────────────────────────────┘          │
+│                             │                                         │
+│              ┌──────────────┼───────────────┐                         │
+│              │              │               │                         │
+│              ▼              ▼               ▼                         │
+│  ┌───────────────┐  ┌──────────────┐  ┌──────────────────┐          │
+│  │   Node-RED    │  │   Otros      │  │   APIs externas  │          │
+│  │               │  │   Servicios  │  │   (Slack, Gmail,  │          │
+│  │ - Orquestador │  │  (MQTT, etc) │  │    Telegram...)   │          │
+│  │ - HA bridge   │  │              │  │                   │          │
+│  │ - Logica IoT  │  └──────────────┘  └──────────────────┘          │
+│  └───────┬───────┘                                                    │
+│          │ WebSocket                                                   │
+│          ▼                                                            │
+│  ┌───────────────────────────────────────┐                            │
+│  │         Home Assistant                 │                            │
+│  │                                        │                            │
+│  │  - Luces (Zigbee/WiFi/Z-Wave)         │                            │
+│  │  - Clima (AC, ventiladores)           │                            │
+│  │  - Sensores (temp, movimiento, puerta)│                            │
+│  │  - Cerraduras inteligentes            │                            │
+│  │  - Camaras                            │                            │
+│  │  - Escenas y scripts                  │                            │
+│  └───────────────────────────────────────┘                            │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+```

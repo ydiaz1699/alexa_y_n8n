@@ -1,0 +1,120 @@
+# ============================================================
+# Configuracion adicional para Home Assistant
+# Agregar estas secciones a tu configuration.yaml
+# ============================================================
+
+# --- REST Commands para llamar a n8n ---
+rest_command:
+  # Comando generico para enviar eventos a n8n
+  notify_n8n:
+    url: "https://tu-n8n.ejemplo.com/webhook/ha-event"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+      X-Source: "home-assistant"
+    payload: >
+      {
+        "event": "{{ event }}",
+        "person": "{{ person | default('') }}",
+        "sensor": "{{ sensor | default('') }}",
+        "message": "{{ message | default('') }}",
+        "temperature": "{{ temperature | default('') }}",
+        "timestamp": "{{ timestamp }}"
+      }
+    content_type: "application/json"
+
+  # Comando para llamar a Node-RED
+  call_nodered:
+    url: "http://localhost:1880/alexa/command"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+    payload: >
+      {
+        "action": "{{ action }}",
+        "dispositivo": "{{ dispositivo | default('') }}",
+        "accion": "{{ accion | default('') }}",
+        "data": "{{ data | default('{}') }}"
+      }
+    content_type: "application/json"
+
+  # Trigger workflow en n8n
+  trigger_n8n_workflow:
+    url: "https://tu-n8n.ejemplo.com/webhook/{{ webhook_path }}"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+    payload: "{{ payload }}"
+    content_type: "application/json"
+
+# --- Scripts utiles ---
+script:
+  # Script: Buenos dias (ejecutable desde Alexa via n8n)
+  buenos_dias:
+    alias: "Buenos Dias"
+    sequence:
+      - service: scene.turn_on
+        target:
+          entity_id: scene.modo_dia
+      - service: media_player.volume_set
+        target:
+          entity_id: media_player.echo_salon
+        data:
+          volume_level: 0.4
+      - service: notify.alexa_media
+        data:
+          target: media_player.echo_salon
+          message: "Buenos dias. Las luces estan encendidas y la temperatura es de {{ states('sensor.temperatura_interior') }} grados."
+          data:
+            type: tts
+
+  # Script: Buenas noches
+  buenas_noches:
+    alias: "Buenas Noches"
+    sequence:
+      - service: scene.turn_on
+        target:
+          entity_id: scene.modo_noche
+      - service: lock.lock
+        target:
+          entity_id: lock.puerta_principal
+      - service: notify.alexa_media
+        data:
+          target: media_player.echo_dormitorio
+          message: "Buenas noches. Todo cerrado y luces apagadas."
+          data:
+            type: tts
+
+  # Script: Salir de casa
+  salir_de_casa:
+    alias: "Salir de Casa"
+    sequence:
+      - service: scene.turn_on
+        target:
+          entity_id: scene.todo_apagado
+      - service: lock.lock
+        target:
+          entity_id: lock.puerta_principal
+      - service: alarm_control_panel.alarm_arm_away
+        target:
+          entity_id: alarm_control_panel.alarma
+      - service: notify.alexa_media
+        data:
+          target: media_player.echo_salon
+          message: "Casa asegurada. Que te vaya bien."
+          data:
+            type: tts
+
+# --- Sensores template para n8n ---
+template:
+  - sensor:
+      - name: "Resumen Casa para n8n"
+        state: "ok"
+        attributes:
+          luces_encendidas: "{{ states.light | selectattr('state', 'eq', 'on') | list | count }}"
+          temperatura: "{{ states('sensor.temperatura_interior') }}"
+          humedad: "{{ states('sensor.humedad_interior') }}"
+          personas_en_casa: "{{ states.person | selectattr('state', 'eq', 'home') | list | count }}"
+          puerta_principal: "{{ states('lock.puerta_principal') }}"
+          alarma: "{{ states('alarm_control_panel.alarma') }}"
+          ultima_actualizacion: "{{ now().isoformat() }}"
