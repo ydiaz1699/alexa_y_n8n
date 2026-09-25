@@ -51,7 +51,9 @@ alexa_y_n8n/
 │   ├── configuration-extras.yaml  # rest_commands, scripts, templates
 │   └── README-ha-mcp.md          # Guia setup ha-mcp + n8n AI Agent
 ├── docs/                          # Documentacion adicional
-│   └── diagramas.md              # Diagramas de flujo detallados
+│   ├── diagramas.md              # Diagramas de flujo detallados
+│   ├── asistente-personal-mcps.md # Ampliar el AI Agent con mas MCPs (correo/agenda/WhatsApp)
+│   └── ai-agent-system-prompt.md  # System prompt ampliado listo para pegar
 ├── .gitignore
 └── README.md
 ```
@@ -372,3 +374,22 @@ n8n (trigger: nuevo email con label "urgente")
   → Voice Monkey API
   → Echo: "Tienes un email urgente de Juan sobre el proyecto X"
 ```
+
+
+---
+
+## Ampliaciones: de domótica a asistente personal
+
+Los ejemplos 3–5 de arriba (correo, agenda, resúmenes) se habilitan **sin crear otro
+workflow ni otra skill**: el **AI Agent** de `alexa-ha-mcp-agent.json` admite VARIAS
+herramientas a la vez. Se le conectan más nodos-tool (Gmail, Google Calendar, búsqueda web,
+WhatsApp vía OpenWA, u otro MCP) y el modelo elige cuál usar según el comando de voz. Es el
+enfoque "asistente personal con múltiples MCPs".
+
+- **Cómo añadir esas herramientas (paso a paso):** [`docs/asistente-personal-mcps.md`](docs/asistente-personal-mcps.md)
+- **System prompt ampliado (listo para pegar en el AI Agent):** [`docs/ai-agent-system-prompt.md`](docs/ai-agent-system-prompt.md)
+
+> ⚠️ **Timeout de Alexa (~8 s):** cada herramienta que el agente encadena suma latencia.
+> Usa un modelo rápido (gpt-4o-mini / gemini-flash-lite), respuestas de máx. 2 frases, y para
+> tareas largas responde "voy a ello" y hazlas en segundo plano. La Lambda usa
+> `N8N_TIMEOUT_MS` (default 7000 ms, con margen); ver `lambda/.env.example`.

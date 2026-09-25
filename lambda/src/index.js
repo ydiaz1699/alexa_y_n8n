@@ -14,6 +14,20 @@ const axios = require('axios');
 // ============================================================
 const N8N_WEBHOOK_BASE_URL = process.env.N8N_WEBHOOK_URL || 'https://tu-n8n.ejemplo.com/webhook';
 
+// Aviso claro en logs si la env var no esta configurada (evita fallos silenciosos
+// apuntando al dominio de ejemplo). Se ve en CloudWatch al arrancar la Lambda.
+if (!process.env.N8N_WEBHOOK_URL) {
+  console.warn(
+    '[ADVERTENCIA] N8N_WEBHOOK_URL no esta definida; usando el dominio de EJEMPLO. '
+    + 'Configura la variable de entorno de la Lambda con la URL real de tu n8n.'
+  );
+}
+
+// Timeout de las llamadas a n8n. Alexa corta la sesion a ~8 s; se deja MARGEN
+// (7 s) para que la Lambda alcance a construir y devolver la respuesta de voz.
+// Si un flujo n8n tarda mas, responder rapido y hacer el trabajo pesado async.
+const N8N_TIMEOUT_MS = parseInt(process.env.N8N_TIMEOUT_MS, 10) || 7000;
+
 // Endpoints especificos para cada intent
 const WEBHOOKS = {
   ejecutarTarea: `${N8N_WEBHOOK_BASE_URL}/alexa-tarea`,
@@ -32,10 +46,11 @@ const WEBHOOKS = {
  * Envia datos a un webhook de n8n y espera respuesta
  * @param {string} webhookUrl - URL del webhook en n8n
  * @param {object} payload - Datos a enviar
- * @param {number} timeout - Timeout en ms (default 8000ms para no exceder limite de Alexa)
+ * @param {number} timeout - Timeout en ms (default N8N_TIMEOUT_MS=7000ms, con margen
+ *                           respecto al corte de ~8s de Alexa)
  * @returns {object} Respuesta de n8n
  */
-async function callN8nWebhook(webhookUrl, payload, timeout = 8000) {
+async function callN8nWebhook(webhookUrl, payload, timeout = N8N_TIMEOUT_MS) {
   try {
     const response = await axios.post(webhookUrl, payload, {
       headers: {
