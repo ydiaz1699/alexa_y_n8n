@@ -193,6 +193,18 @@ aws lambda add-permission \
    - Reemplaza `TU_TOKEN_VOICE_MONKEY` y `TU_DEVICE_ID`
    - Activa el workflow
 
+> **Alternativa a Voice Monkey (evaluada y DESCARTADA por ahora):** existen nodos de
+> Node-RED que hacen hablar a los Echo **sin servicio externo** (ej.
+> `node-red-contrib-alexa-remote2`, `node-red-contrib-amazon-echo`; método visto en un video
+> de "Diego" que conecta Gmail→MQTT→Node-RED→Alexa habla). **No se adopta** porque usan una
+> **API NO oficial de Amazon, sin mantenimiento**, con el problema recurrente de tener que
+> **re-loguearse para renovar la cookie** "a veces cada semanas, a veces cada horas" (reportes
+> de la comunidad HA, 2025-2026). Voice Monkey depende de un tercero pero es **más estable**
+> para notificaciones proactivas. Además, ese método es **unidireccional** (solo n8n→Alexa):
+> este proyecto ya lo supera con la Custom Skill + Lambda (Alexa→n8n) bidireccional. Se deja
+> anotado para no re-evaluarlo; revisar si algún día aparece un nodo mantenido.
+> (Ficha en `Varios_tools/tool_catalog/entries/alexa-remote2-nodered.md`, estado DESCARTADO.)
+
 ### Paso 5: Configurar Node-RED (bridge con Home Assistant)
 
 1. Instala el nodo de HA en Node-RED:
