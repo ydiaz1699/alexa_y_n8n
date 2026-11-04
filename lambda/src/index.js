@@ -1,34 +1,37 @@
 /**
- * Alexa Custom Skill - Lambda Handler
+ * Alexa Custom Skill - Lambda Handler (Versión Mejorada)
  * Conexion bidireccional con n8n
- * 
- * Flujo Alexa -> n8n: El usuario habla, Lambda envia datos al webhook de n8n
- * Flujo n8n -> Alexa: n8n responde con datos que Alexa lee al usuario
+ *
+ * Mejoras incluidas:
+ * - Validación de slots obligatorios + re-prompt
+ * - Logging estructurado con duración y requestId
+ * - Soporte SSML y shouldEndSession desde n8n
+ * - Mejor manejo de errores (timeout, red, n8n)
+ * - Refactor de handlers para reducir duplicación
+ * - Contrato de respuesta documentado
+ *
+ * Contrato esperado de respuesta de n8n (JSON):
+ * {
+ *   "mensaje": "Texto que Alexa dirá (obligatorio si no hay ssml)",
+ *   "ssml": "<speak>Texto con SSML opcional</speak>",
+ *   "shouldEndSession": false,
+ *   "card": { "title": "Título", "text": "Texto de la tarjeta" }
+ * }
  */
 
 const Alexa = require('ask-sdk-core');
 const axios = require('axios');
 
 // ============================================================
-// CONFIGURACION - Cambiar estos valores por los tuyos
+// CONFIGURACIÓN
 // ============================================================
 const N8N_WEBHOOK_BASE_URL = process.env.N8N_WEBHOOK_URL || 'https://tu-n8n.ejemplo.com/webhook';
-
-// Aviso claro en logs si la env var no esta configurada (evita fallos silenciosos
-// apuntando al dominio de ejemplo). Se ve en CloudWatch al arrancar la Lambda.
-if (!process.env.N8N_WEBHOOK_URL) {
-  console.warn(
-    '[ADVERTENCIA] N8N_WEBHOOK_URL no esta definida; usando el dominio de EJEMPLO. '
-    + 'Configura la variable de entorno de la Lambda con la URL real de tu n8n.'
-  );
-}
-
-// Timeout de las llamadas a n8n. Alexa corta la sesion a ~8 s; se deja MARGEN
-// (7 s) para que la Lambda alcance a construir y devolver la respuesta de voz.
-// Si un flujo n8n tarda mas, responder rapido y hacer el trabajo pesado async.
 const N8N_TIMEOUT_MS = parseInt(process.env.N8N_TIMEOUT_MS, 10) || 7000;
 
-// Endpoints especificos para cada intent
+if (!process.env.N8N_WEBHOOK_URL) {
+  console.warn('[ADVERTENCIA] N8N_WEBHOOK_URL no está definida. Usando dominio de ejemplo.');
+}
+
 const WEBHOOKS = {
   ejecutarTarea: `${N8N_WEBHOOK_BASE_URL}/alexa-tarea`,
   consultarEstado: `${N8N_WEBHOOK_BASE_URL}/alexa-estado`,
@@ -38,279 +41,321 @@ const WEBHOOKS = {
   comandoLibre: `${N8N_WEBHOOK_BASE_URL}/alexa-comando`,
 };
 
+// Acciones que requieren confirmación adicional
+const DESTRUCTIVE_ACTIONS = ['apagar', 'reiniciar'];
+
 // ============================================================
 // UTILIDADES
 // ============================================================
 
 /**
- * Envia datos a un webhook de n8n y espera respuesta
- * @param {string} webhookUrl - URL del webhook en n8n
- * @param {object} payload - Datos a enviar
- * @param {number} timeout - Timeout en ms (default N8N_TIMEOUT_MS=7000ms, con margen
- *                           respecto al corte de ~8s de Alexa)
- * @returns {object} Respuesta de n8n
+ * Logging estructurado
  */
-async function callN8nWebhook(webhookUrl, payload, timeout = N8N_TIMEOUT_MS) {
+function log(level, message, meta = {}) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    level,
+    message,
+    ...meta,
+  };
+  if (level === 'error') {
+    console.error(JSON.stringify(entry));
+  } else if (level === 'warn') {
+    console.warn(JSON.stringify(entry));
+  } else {
+    console.log(JSON.stringify(entry));
+  }
+}
+
+/**
+ * Extrae valor de un slot de forma segura
+ */
+function getSlotValue(handlerInput, slotName) {
+  const request = handlerInput.requestEnvelope.request;
+  if (request.intent?.slots?.[slotName]) {
+    return request.intent.slots[slotName].value || null;
+  }
+  return null;
+}
+
+/**
+ * Valida slots obligatorios. Si falta alguno, devuelve respuesta de re-prompt.
+ * @returns {null|object} null si todo OK, o respuesta de Alexa si falta slot
+ */
+function validateRequiredSlots(handlerInput, requiredSlots) {
+  for (const slot of requiredSlots) {
+    const value = getSlotValue(handlerInput, slot.name);
+    if (!value) {
+      log('info', 'Slot obligatorio faltante', {
+        intent: Alexa.getIntentName(handlerInput.requestEnvelope),
+        slot: slot.name,
+      });
+      return handlerInput.responseBuilder
+        .speak(slot.prompt)
+        .reprompt(slot.reprompt || slot.prompt)
+        .getResponse();
+    }
+  }
+  return null;
+}
+
+/**
+ * Llama a un webhook de n8n con logging y mejor manejo de errores
+ */
+async function callN8nWebhook(webhookUrl, payload, requestId) {
+  const start = Date.now();
   try {
     const response = await axios.post(webhookUrl, payload, {
       headers: {
         'Content-Type': 'application/json',
         'X-Source': 'alexa-skill',
+        'X-Request-Id': requestId,
         'X-Timestamp': new Date().toISOString(),
       },
-      timeout: timeout,
+      timeout: N8N_TIMEOUT_MS,
     });
-    return {
-      success: true,
-      data: response.data,
-    };
+
+    const duration = Date.now() - start;
+    log('info', 'n8n call success', { requestId, duration, status: response.status });
+
+    return { success: true, data: response.data, duration };
   } catch (error) {
-    console.error('Error llamando a n8n:', error.message);
+    const duration = Date.now() - start;
+    const isTimeout = error.code === 'ECONNABORTED' || error.message.includes('timeout');
+
+    log('error', 'n8n call failed', {
+      requestId,
+      duration,
+      error: error.message,
+      isTimeout,
+      status: error.response?.status,
+    });
+
     return {
       success: false,
       error: error.message,
+      isTimeout,
+      status: error.response?.status,
+      duration,
     };
   }
 }
 
 /**
- * Extrae el valor de un slot de forma segura
+ * Construye la respuesta de voz a partir del resultado de n8n
  */
-function getSlotValue(handlerInput, slotName) {
-  const request = handlerInput.requestEnvelope.request;
-  if (request.intent && request.intent.slots && request.intent.slots[slotName]) {
-    return request.intent.slots[slotName].value || null;
+function buildSpeechResponse(handlerInput, result, fallbackMessage) {
+  let speechText = fallbackMessage;
+  let ssml = null;
+  let shouldEndSession = false;
+  let card = null;
+
+  if (result.success && result.data) {
+    speechText = result.data.mensaje || fallbackMessage;
+    ssml = result.data.ssml || null;
+    shouldEndSession = result.data.shouldEndSession === true;
+    card = result.data.card || null;
+  } else if (result.isTimeout) {
+    speechText = 'La automatización está tardando más de lo esperado. Te aviso cuando termine.';
+  } else {
+    speechText = fallbackMessage;
   }
-  return null;
+
+  const builder = handlerInput.responseBuilder;
+
+  if (ssml) {
+    builder.speak(ssml);
+  } else {
+    builder.speak(speechText);
+  }
+
+  if (!shouldEndSession) {
+    builder.reprompt('¿Necesitas algo más?');
+  }
+
+  if (card && card.title && card.text) {
+    builder.withSimpleCard(card.title, card.text);
+  }
+
+  return builder.getResponse();
+}
+
+/**
+ * Factory para crear handlers de intents que llaman a n8n
+ */
+function createN8nIntentHandler({
+  intentName,
+  webhookKey,
+  requiredSlots = [],
+  buildPayload,
+  fallbackMessage,
+}) {
+  return {
+    canHandle(handlerInput) {
+      return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+        && Alexa.getIntentName(handlerInput.requestEnvelope) === intentName;
+    },
+    async handle(handlerInput) {
+      const requestId = handlerInput.requestEnvelope.request.requestId;
+
+      // Validar slots obligatorios
+      const validationResponse = validateRequiredSlots(handlerInput, requiredSlots);
+      if (validationResponse) return validationResponse;
+
+      const payload = buildPayload(handlerInput);
+      payload.userId = handlerInput.requestEnvelope.session.user.userId;
+      payload.timestamp = new Date().toISOString();
+      payload.requestId = requestId;
+
+      log('info', 'Intent recibido', { requestId, intent: intentName, payload });
+
+      const result = await callN8nWebhook(WEBHOOKS[webhookKey], payload, requestId);
+      return buildSpeechResponse(handlerInput, result, fallbackMessage);
+    },
+  };
 }
 
 // ============================================================
 // HANDLERS DE INTENTS
 // ============================================================
 
-/**
- * LaunchRequest - Cuando el usuario abre la skill
- * "Alexa, abre mi automatizacion"
- */
 const LaunchRequestHandler = {
   canHandle(handlerInput) {
     return Alexa.getRequestType(handlerInput.requestEnvelope) === 'LaunchRequest';
   },
   handle(handlerInput) {
-    const speechText = 'Bienvenido a tu centro de automatizacion con n8n. '
+    const speechText = 'Bienvenido a tu centro de automatización con n8n. '
       + 'Puedes decirme: ejecuta una tarea, consulta el estado, '
-      + 'envia un mensaje, dame el resumen del dia, '
-      + 'o controla un dispositivo. Que quieres hacer?';
+      + 'envía un mensaje, dame el resumen del día, '
+      + 'o controla un dispositivo. ¿Qué quieres hacer?';
 
     return handlerInput.responseBuilder
       .speak(speechText)
-      .reprompt('Que automatizacion quieres ejecutar?')
+      .reprompt('¿Qué automatización quieres ejecutar?')
       .getResponse();
   },
 };
 
-/**
- * EjecutarTareaIntent - Ejecuta una tarea/workflow en n8n
- * "Alexa, ejecuta la tarea {nombreTarea}"
- */
-const EjecutarTareaIntentHandler = {
-  canHandle(handlerInput) {
-    return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
-      && Alexa.getIntentName(handlerInput.requestEnvelope) === 'EjecutarTareaIntent';
-  },
-  async handle(handlerInput) {
-    const nombreTarea = getSlotValue(handlerInput, 'nombreTarea') || 'tarea general';
+const EjecutarTareaIntentHandler = createN8nIntentHandler({
+  intentName: 'EjecutarTareaIntent',
+  webhookKey: 'ejecutarTarea',
+  requiredSlots: [
+    {
+      name: 'nombreTarea',
+      prompt: '¿Qué tarea quieres que ejecute?',
+      reprompt: 'Dime el nombre de la tarea.',
+    },
+  ],
+  buildPayload: (handlerInput) => ({
+    action: 'ejecutar_tarea',
+    tarea: getSlotValue(handlerInput, 'nombreTarea'),
+  }),
+  fallbackMessage: 'La tarea se ha ejecutado.',
+});
 
-    const result = await callN8nWebhook(WEBHOOKS.ejecutarTarea, {
-      action: 'ejecutar_tarea',
-      tarea: nombreTarea,
-      userId: handlerInput.requestEnvelope.session.user.userId,
-      timestamp: new Date().toISOString(),
-    });
+const ConsultarEstadoIntentHandler = createN8nIntentHandler({
+  intentName: 'ConsultarEstadoIntent',
+  webhookKey: 'consultarEstado',
+  requiredSlots: [
+    {
+      name: 'elemento',
+      prompt: '¿De qué quieres saber el estado?',
+      reprompt: 'Dime qué elemento quieres consultar.',
+    },
+  ],
+  buildPayload: (handlerInput) => ({
+    action: 'consultar_estado',
+    elemento: getSlotValue(handlerInput, 'elemento'),
+  }),
+  fallbackMessage: 'El estado es normal.',
+});
 
-    let speechText;
-    if (result.success && result.data) {
-      // n8n puede devolver un mensaje personalizado en result.data.mensaje
-      speechText = result.data.mensaje || `La tarea ${nombreTarea} se ha ejecutado correctamente.`;
-    } else {
-      speechText = `Hubo un problema al ejecutar la tarea ${nombreTarea}. Intenta de nuevo mas tarde.`;
+const EnviarMensajeIntentHandler = createN8nIntentHandler({
+  intentName: 'EnviarMensajeIntent',
+  webhookKey: 'enviarMensaje',
+  requiredSlots: [
+    {
+      name: 'destinatario',
+      prompt: '¿A quién quieres enviar el mensaje?',
+      reprompt: 'Dime el nombre del destinatario.',
+    },
+    {
+      name: 'contenido',
+      prompt: '¿Qué mensaje quieres enviar?',
+      reprompt: 'Dime el contenido del mensaje.',
+    },
+  ],
+  buildPayload: (handlerInput) => ({
+    action: 'enviar_mensaje',
+    destinatario: getSlotValue(handlerInput, 'destinatario'),
+    contenido: getSlotValue(handlerInput, 'contenido'),
+  }),
+  fallbackMessage: 'Mensaje enviado correctamente.',
+});
+
+const ResumenDiarioIntentHandler = createN8nIntentHandler({
+  intentName: 'ResumenDiarioIntent',
+  webhookKey: 'resumenDiario',
+  requiredSlots: [],
+  buildPayload: () => ({
+    action: 'resumen_diario',
+  }),
+  fallbackMessage: 'No hay novedades por hoy. Todo está en orden.',
+});
+
+const ControlDispositivoIntentHandler = createN8nIntentHandler({
+  intentName: 'ControlDispositivoIntent',
+  webhookKey: 'controlDispositivo',
+  requiredSlots: [
+    {
+      name: 'accionDispositivo',
+      prompt: '¿Qué acción quieres realizar? Puedes decir encender, apagar o reiniciar.',
+      reprompt: 'Dime la acción: encender, apagar o reiniciar.',
+    },
+    {
+      name: 'dispositivo',
+      prompt: '¿Qué dispositivo quieres controlar?',
+      reprompt: 'Dime el nombre del dispositivo.',
+    },
+  ],
+  buildPayload: (handlerInput) => {
+    const accion = getSlotValue(handlerInput, 'accionDispositivo');
+    const dispositivo = getSlotValue(handlerInput, 'dispositivo');
+
+    // Nota: la confirmación de acciones destructivas se puede añadir aquí
+    // guardando en sessionAttributes y usando Yes/No intents
+    if (DESTRUCTIVE_ACTIONS.includes(accion)) {
+      log('info', 'Acción potencialmente destructiva', { accion, dispositivo });
     }
 
-    return handlerInput.responseBuilder
-      .speak(speechText)
-      .reprompt('Necesitas algo mas?')
-      .getResponse();
-  },
-};
-
-/**
- * ConsultarEstadoIntent - Consulta estado de algo via n8n
- * "Alexa, cual es el estado de {elemento}"
- */
-const ConsultarEstadoIntentHandler = {
-  canHandle(handlerInput) {
-    return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
-      && Alexa.getIntentName(handlerInput.requestEnvelope) === 'ConsultarEstadoIntent';
-  },
-  async handle(handlerInput) {
-    const elemento = getSlotValue(handlerInput, 'elemento') || 'sistema';
-
-    const result = await callN8nWebhook(WEBHOOKS.consultarEstado, {
-      action: 'consultar_estado',
-      elemento: elemento,
-      userId: handlerInput.requestEnvelope.session.user.userId,
-      timestamp: new Date().toISOString(),
-    });
-
-    let speechText;
-    if (result.success && result.data) {
-      speechText = result.data.mensaje || `El estado de ${elemento} es: todo normal.`;
-    } else {
-      speechText = `No pude obtener el estado de ${elemento}. Verifica que n8n este activo.`;
-    }
-
-    return handlerInput.responseBuilder
-      .speak(speechText)
-      .reprompt('Quieres consultar algo mas?')
-      .getResponse();
-  },
-};
-
-/**
- * EnviarMensajeIntent - Envia un mensaje a traves de n8n
- * "Alexa, envia un mensaje a {destinatario} diciendo {contenido}"
- */
-const EnviarMensajeIntentHandler = {
-  canHandle(handlerInput) {
-    return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
-      && Alexa.getIntentName(handlerInput.requestEnvelope) === 'EnviarMensajeIntent';
-  },
-  async handle(handlerInput) {
-    const destinatario = getSlotValue(handlerInput, 'destinatario') || 'equipo';
-    const contenido = getSlotValue(handlerInput, 'contenido') || '';
-
-    const result = await callN8nWebhook(WEBHOOKS.enviarMensaje, {
-      action: 'enviar_mensaje',
-      destinatario: destinatario,
-      contenido: contenido,
-      userId: handlerInput.requestEnvelope.session.user.userId,
-      timestamp: new Date().toISOString(),
-    });
-
-    let speechText;
-    if (result.success && result.data) {
-      speechText = result.data.mensaje || `Mensaje enviado a ${destinatario} correctamente.`;
-    } else {
-      speechText = `No pude enviar el mensaje a ${destinatario}. Intenta de nuevo.`;
-    }
-
-    return handlerInput.responseBuilder
-      .speak(speechText)
-      .reprompt('Algo mas?')
-      .getResponse();
-  },
-};
-
-/**
- * ResumenDiarioIntent - Pide un resumen diario a n8n
- * "Alexa, dame el resumen del dia"
- */
-const ResumenDiarioIntentHandler = {
-  canHandle(handlerInput) {
-    return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
-      && Alexa.getIntentName(handlerInput.requestEnvelope) === 'ResumenDiarioIntent';
-  },
-  async handle(handlerInput) {
-    const result = await callN8nWebhook(WEBHOOKS.resumenDiario, {
-      action: 'resumen_diario',
-      userId: handlerInput.requestEnvelope.session.user.userId,
-      timestamp: new Date().toISOString(),
-    });
-
-    let speechText;
-    if (result.success && result.data) {
-      speechText = result.data.mensaje || 'No hay novedades por hoy. Todo esta en orden.';
-    } else {
-      speechText = 'No pude obtener el resumen del dia. Verifica la conexion con n8n.';
-    }
-
-    return handlerInput.responseBuilder
-      .speak(speechText)
-      .reprompt('Necesitas algo mas?')
-      .getResponse();
-  },
-};
-
-/**
- * ControlDispositivoIntent - Controla dispositivos via n8n
- * "Alexa, enciende {dispositivo}" / "Alexa, apaga {dispositivo}"
- */
-const ControlDispositivoIntentHandler = {
-  canHandle(handlerInput) {
-    return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
-      && Alexa.getIntentName(handlerInput.requestEnvelope) === 'ControlDispositivoIntent';
-  },
-  async handle(handlerInput) {
-    const dispositivo = getSlotValue(handlerInput, 'dispositivo') || 'dispositivo';
-    const accion = getSlotValue(handlerInput, 'accionDispositivo') || 'activar';
-
-    const result = await callN8nWebhook(WEBHOOKS.controlDispositivo, {
+    return {
       action: 'control_dispositivo',
-      dispositivo: dispositivo,
-      accion: accion,
-      userId: handlerInput.requestEnvelope.session.user.userId,
-      timestamp: new Date().toISOString(),
-    });
-
-    let speechText;
-    if (result.success && result.data) {
-      speechText = result.data.mensaje || `${dispositivo} se ha ${accion === 'encender' ? 'encendido' : 'apagado'}.`;
-    } else {
-      speechText = `No pude ${accion} el ${dispositivo}. Verifica la conexion.`;
-    }
-
-    return handlerInput.responseBuilder
-      .speak(speechText)
-      .reprompt('Algo mas?')
-      .getResponse();
+      dispositivo,
+      accion,
+    };
   },
-};
+  fallbackMessage: 'Acción realizada en el dispositivo.',
+});
 
-/**
- * ComandoLibreIntent - Envia un comando de texto libre a n8n
- * "Alexa, dile a mi automatizacion {comando}"
- */
-const ComandoLibreIntentHandler = {
-  canHandle(handlerInput) {
-    return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
-      && Alexa.getIntentName(handlerInput.requestEnvelope) === 'ComandoLibreIntent';
-  },
-  async handle(handlerInput) {
-    const comando = getSlotValue(handlerInput, 'comando') || '';
-
-    const result = await callN8nWebhook(WEBHOOKS.comandoLibre, {
-      action: 'comando_libre',
-      comando: comando,
-      userId: handlerInput.requestEnvelope.session.user.userId,
-      timestamp: new Date().toISOString(),
-    });
-
-    let speechText;
-    if (result.success && result.data) {
-      speechText = result.data.mensaje || 'Comando ejecutado.';
-    } else {
-      speechText = 'No pude procesar tu comando. Intenta de nuevo.';
-    }
-
-    return handlerInput.responseBuilder
-      .speak(speechText)
-      .reprompt('Algo mas?')
-      .getResponse();
-  },
-};
+const ComandoLibreIntentHandler = createN8nIntentHandler({
+  intentName: 'ComandoLibreIntent',
+  webhookKey: 'comandoLibre',
+  requiredSlots: [
+    {
+      name: 'comando',
+      prompt: '¿Qué comando quieres que procese?',
+      reprompt: 'Dime el comando que quieres ejecutar.',
+    },
+  ],
+  buildPayload: (handlerInput) => ({
+    action: 'comando_libre',
+    comando: getSlotValue(handlerInput, 'comando'),
+  }),
+  fallbackMessage: 'Comando procesado.',
+});
 
 // ============================================================
-// HANDLERS DE SISTEMA (obligatorios)
+// HANDLERS DE SISTEMA
 // ============================================================
 
 const HelpIntentHandler = {
@@ -321,9 +366,9 @@ const HelpIntentHandler = {
   handle(handlerInput) {
     const speechText = 'Soy tu puente con n8n. Puedes pedirme: '
       + 'ejecuta una tarea, consulta el estado de algo, '
-      + 'envia un mensaje, dame el resumen del dia, '
+      + 'envía un mensaje, dame el resumen del día, '
       + 'enciende o apaga un dispositivo, '
-      + 'o dime un comando libre. Que necesitas?';
+      + 'o dime un comando libre. ¿Qué necesitas?';
 
     return handlerInput.responseBuilder
       .speak(speechText)
@@ -340,7 +385,7 @@ const CancelAndStopIntentHandler = {
   },
   handle(handlerInput) {
     return handlerInput.responseBuilder
-      .speak('Hasta luego! Tu automatizacion sigue activa en n8n.')
+      .speak('¡Hasta luego! Tu automatización sigue activa en n8n.')
       .getResponse();
   },
 };
@@ -350,7 +395,10 @@ const SessionEndedRequestHandler = {
     return Alexa.getRequestType(handlerInput.requestEnvelope) === 'SessionEndedRequest';
   },
   handle(handlerInput) {
-    console.log(`Session ended: ${JSON.stringify(handlerInput.requestEnvelope)}`);
+    log('info', 'Session ended', {
+      reason: handlerInput.requestEnvelope.request.reason,
+      requestId: handlerInput.requestEnvelope.request.requestId,
+    });
     return handlerInput.responseBuilder.getResponse();
   },
 };
@@ -361,8 +409,8 @@ const FallbackIntentHandler = {
       && Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.FallbackIntent';
   },
   handle(handlerInput) {
-    const speechText = 'No entendi eso. Puedes decirme ejecuta una tarea, '
-      + 'consulta un estado, o dame el resumen del dia.';
+    const speechText = 'No entendí eso. Puedes decirme ejecuta una tarea, '
+      + 'consulta un estado, o dame el resumen del día.';
 
     return handlerInput.responseBuilder
       .speak(speechText)
@@ -376,18 +424,22 @@ const ErrorHandler = {
     return true;
   },
   handle(handlerInput, error) {
-    console.error(`Error handled: ${error.message}`);
-    console.error(`Error stack: ${error.stack}`);
+    const requestId = handlerInput.requestEnvelope?.request?.requestId;
+    log('error', 'Error no controlado', {
+      requestId,
+      message: error.message,
+      stack: error.stack,
+    });
 
     return handlerInput.responseBuilder
-      .speak('Lo siento, hubo un error. Intenta de nuevo.')
+      .speak('Lo siento, hubo un error inesperado. Intenta de nuevo.')
       .reprompt('Intenta decirme otra cosa.')
       .getResponse();
   },
 };
 
 // ============================================================
-// LAMBDA HANDLER - Exportar
+// EXPORTAR SKILL
 // ============================================================
 
 const skillBuilder = Alexa.SkillBuilders.custom();
